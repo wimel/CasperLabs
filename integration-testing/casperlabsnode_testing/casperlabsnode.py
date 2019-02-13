@@ -1,33 +1,31 @@
-import re
-import os
-import shlex
-import logging
-import threading
 import contextlib
-from typing import Generator
+import logging
+import os
+import random
+import re
+import shlex
+import string
+import threading
+from multiprocessing import Process, Queue
+from queue import Empty
+from typing import TYPE_CHECKING, Dict, Generator, List, Optional, Tuple, Union
 
 import pytest
 from docker.client import DockerClient
 from docker.errors import ContainerError
+
 import conftest
 from casperlabsnode_testing.common import (
-    random_string,
-    make_tempfile,
-    make_tempdir,
     TestingContext,
+    make_tempdir,
+    make_tempfile,
+    random_string,
 )
-from casperlabsnode_testing.wait import (
-    wait_for_node_started,
-)
+from casperlabsnode_testing.wait import wait_for_node_started
 
-from multiprocessing import Queue, Process
-from queue import Empty
-
-from typing import Dict, List, Tuple, Union, TYPE_CHECKING, Optional, Generator, Callable
 
 if TYPE_CHECKING:
     from conftest import KeyPair
-    from docker.client import DockerClient
     from docker.models.containers import Container
     from logging import Logger
     from threading import Event
@@ -152,10 +150,14 @@ class Node:
 
     def get_metrics(self) -> Tuple[int, str]:
         cmd = 'curl -s http://localhost:40403/metrics'
-        return self.exec_run(cmd=cmd)
+        output = self.exec_run(cmd=cmd)
+        logging.info("THE curl output in get_metrics is :{}".format(repr(output)))
+        return output
 
     def get_metrics_strict(self):
-        return self.shell_out('curl', '-s', 'http://localhost:40403/metrics')
+        output = self.shell_out('curl', '-s', 'http://localhost:40403/metrics')
+        logging.info("THE curl output in get_metrics_strict is :{}".format(repr(output)))
+        return output
 
     def cleanup(self) -> None:
         self.container.remove(force=True, v=True)
@@ -163,7 +165,7 @@ class Node:
         self.background_logging.join()
 
     def deploy_contract(self, contract: str) -> Tuple[int, str]:
-        cmd = '{casperlabsnode_binary} deploy --from "0x1" --gas-limit 1000000 --gas-price 1 --nonce 0 {casperlabsnode_deploy_dir}/{contract}'.format(
+        cmd = '{casperlabsnode_binary} deploy --from "00000000000000000000" --gas-limit 1000000 --gas-price 1 --nonce 0 {casperlabsnode_deploy_dir}/{contract}'.format(
             casperlabsnode_binary=casperlabsnode_binary,
             casperlabsnode_deploy_dir=casperlabsnode_deploy_dir,
             contract=contract
@@ -226,7 +228,7 @@ class Node:
     def call_casperlabsnode(self, *node_args: str, stderr: bool = True) -> str:
         return self.shell_out(casperlabsnode_binary, *node_args, stderr=stderr)
 
-    def invoke_client(self, command: str, volumes: Dict[str, Dict[str, str]]=None) -> str:
+    def invoke_client(self, command: str, volumes: Dict[str, Dict[str, str]] = None) -> str:
         if volumes is None:
             volumes = {}
         try:
@@ -234,20 +236,22 @@ class Node:
             output = self.docker_client.containers.run(
                 image="casperlabs/client:{}".format(TAG),
                 auto_remove=True,
-                name="client-{}".format(TAG),
+                name="client-{}-{}".format(
+                    ''.join(random.SystemRandom().choice(string.ascii_uppercase + string.digits) for _ in range(5)),
+                    TAG
+                ),
                 command=command,
                 network=self.network,
-                volumes=volumes
-            ).decode("utf-8")
+                volumes=volumes).decode('utf-8')
             logging.debug("OUTPUT {}".format(output))
             return output
         except ContainerError as err:
-            logging.warning("EXITED code={} command='{}' output='{}'".format(err.exit_status, err.command, err.stderr))
+            logging.warning("EXITED code={} command='{}' stderr='{}'".format(err.exit_status, err.command, err.stderr))
             raise NonZeroExitCodeError(command=(command, err.exit_status), exit_code=err.exit_status, output=err.stderr)
 
-    def deploy(self, session_code: str, payment_code:str="payment.wasm",
-               from_address:str="00000000000000000000", gas_limit:int=1000000,
-               gas_price:int=1, nonce:int=0) -> str:
+    def deploy(self, session_code: str, payment_code: str = "payment.wasm",
+               from_address: str = "00000000000000000000", gas_limit: int = 1000000,
+               gas_price: int = 1, nonce: int = 0) -> str:
         session_code_full_path = "/tmp/resources/{}".format(session_code)
         payment_code_full_path = "/tmp/resources/{}".format(payment_code)
 
@@ -293,11 +297,10 @@ class Node:
 
     def generate_faucet_bonding_deploys(self, bond_amount: int, private_key: str, public_key: str) -> str:
         return self.call_casperlabsnode('generateFaucetBondingDeploys',
-            '--amount={}'.format(bond_amount),
-            '--private-key={}'.format(private_key),
-            '--public-key={}'.format(public_key),
-            '--sig-algorithm=ed25519',
-        )
+                                        '--amount={}'.format(bond_amount),
+                                        '--private-key={}'.format(private_key),
+                                        '--public-key={}'.format(public_key),
+                                        '--sig-algorithm=ed25519')
 
     def cat_forward_file(self, public_key: str) -> str:
         return self.shell_out('cat', '/opt/docker/forward_{}.rho'.format(public_key))
@@ -367,7 +370,7 @@ def make_node(
     command = make_container_command(container_command, container_command_options)
 
     env = {
-        'RUST_BACKTRACE':'full'
+        'RUST_BACKTRACE': 'full'
     }
     java_options = os.environ.get('_JAVA_OPTIONS')
     if java_options is not None:
@@ -405,7 +408,7 @@ def make_node(
     return node
 
 
-def get_absolute_path_for_mounting(relative_path: str, mount_dir: Optional[str]=None)-> str:
+def get_absolute_path_for_mounting(relative_path: str, mount_dir: Optional[str] = None) -> str:
     """Drone runs each job in a new Docker container FOO. That Docker
     container has a new filesystem. Anything in that container can read
     anything in that filesystem. To read files from HOST, it has to be shared
@@ -446,13 +449,13 @@ def make_bootstrap_node(
         network_name=network,
     )
     container_command_options = {
-        "--server-port":                   40400,
-        "--server-standalone":             "",
-        "--casper-validator-private-key":  key_pair.private_key,
-        "--casper-validator-public-key":   key_pair.public_key,
-        "--casper-has-faucet":             "",
-        "--server-host":                   name,
-        "--metrics-prometheus":            "",
+        "--server-port": 40400,
+        "--server-standalone": "",
+        "--casper-validator-private-key": key_pair.private_key,
+        "--casper-validator-public-key": key_pair.public_key,
+        "--casper-has-faucet": "",
+        "--server-host": name,
+        "--metrics-prometheus": "",
     }
 
     if cli_options is not None:
@@ -502,11 +505,11 @@ def make_peer(
     bootstrap_address = bootstrap.get_casperlabsnode_address()
 
     container_command_options = {
-        "--server-bootstrap":       bootstrap_address,
-        "--casper-validator-private-key":  key_pair.private_key,
-        "--casper-validator-public-key":   key_pair.public_key,
-        "--casper-host":                   name,
-        "--prometheus":                    "",
+        "--server-bootstrap": bootstrap_address,
+        "--casper-validator-private-key": key_pair.private_key,
+        "--casper-validator-public-key": key_pair.public_key,
+        "--server-host": name,
+        "--metrics-prometheus": ""
     }
 
     container = make_node(

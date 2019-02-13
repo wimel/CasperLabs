@@ -76,18 +76,14 @@ def test_metrics_api_socket(command_line_options_fixture, docker_client_fixture)
                 assert exit_code == 0, "Could not get the metrics for node {node.name}"
 
 
-def deploy_block(node, expected_string, contract_name):
+def deploy_block(node, contract_name):
     local_contract_file_path = os.path.join('resources', contract_name)
     shutil.copyfile(local_contract_file_path, f"{node.local_deploy_dir}/{contract_name}")
-    container_contract_file_path = '{}/{}'.format(node.remote_deploy_dir, contract_name)
-    node.shell_out(
-        'sed',
-        '-i',
-        '-e', 's/@placeholder@/{}/g'.format(expected_string),
-        container_contract_file_path,
-    )
-    node.deploy(container_contract_file_path)
+    deploy_output = node.deploy(contract_name)
+    assert deploy_output.strip() == "Success!"
+    logging.info(f"The deployed output is : {deploy_output}")
     block_hash = node.propose()
+    logging.info(f"The block hash: {block_hash} generated for {node.container.name} for {contract_name}")
     return block_hash
 
 
@@ -110,17 +106,11 @@ def casper_propose_and_deploy(context, network):
     """
 
     token_size = 20
-    contract_name = 'contract.rho'
+    contract_name = 'helloname.wasm'
     for node in network.nodes:
         logging.info("Run test on node '{}'".format(node.name))
+        block_hash = deploy_block(node, contract_name)
 
-        random_token = random_string(token_size)
-
-        expected_string = mk_expected_string(node, random_token)
-        block_hash = deploy_block(node, expected_string, contract_name)
-
-        expected_string = mk_expected_string(node, random_token)
-        check_blocks(node, expected_string, network, context, block_hash)
 
 
 def test_casper_propose_and_deploy(command_line_options_fixture, docker_client_fixture):

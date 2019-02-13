@@ -3,17 +3,21 @@ WORKDIR /tmp
 RUN apt-get update && apt-get -yq install unzip
 RUN curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v3.6.1/protoc-3.6.1-linux-x86_64.zip
 RUN unzip -o protoc-3.6.1-linux-x86_64.zip -d /usr/local bin/protoc
-RUN rustup toolchain install nightly
-RUN rustup target add x86_64-unknown-linux-gnu --toolchain nightly
+RUN rustup -v default nightly-2018-12-04
+# $(tail -n 1 /usr/src/execution-engine/rust-toolchain)
+RUN rustup -v update
 WORKDIR /usr/src
 COPY . .
 WORKDIR /usr/src/execution-engine/comm
-RUN cargo +nightly run --bin grpc-protoc
-RUN cargo +nightly build --release
+RUN cargo update
+RUN cargo build --release
+
 
 FROM casperlabs/node:latest
-#RUN apt-get update && apt-get -yq install curl nmap
+RUN apt-get update && apt-get -yq install curl sed nmap
+WORKDIR /tmp/resources
+COPY --from=0 /usr/src/integration-testing/resources  .
 WORKDIR /opt/docker/bin
-COPY --from=0 /usr/src/execution-engine/comm/target/release/casperlabs-engine-grpc-server .
+COPY --from=0 /usr/src/execution-engine/target/release/casperlabs-engine-grpc-server .
 COPY integration-testing/bootstrap .
 ENTRYPOINT ["/opt/docker/bin/bootstrap"]
