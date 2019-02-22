@@ -1,7 +1,7 @@
 use std::marker::{Send, Sync};
 
-use execution_engine::engine::{Error as EngineError, EngineState, ExecutionResult};
-use execution_engine::execution::{Error as ExecutionError};
+use execution_engine::engine::{EngineState, Error as EngineError, ExecutionResult};
+use execution_engine::execution::Error as ExecutionError;
 use ipc::*;
 use ipc_grpc::ExecutionEngineService;
 use mappings::*;
@@ -110,7 +110,7 @@ impl<R: DbReader, H: History<R>> ipc_grpc::ExecutionEngineService for EngineStat
                                 deploy_result.set_error(deploy_error);
                                 deploy_results.push(deploy_result);
                                 Ok(())
-                            },
+                            }
                             //TODO(mateusz.gorski): Be more specific about execution errors
                             other => {
                                 let msg = format!("{:?}", other);
