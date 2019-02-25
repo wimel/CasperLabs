@@ -47,8 +47,7 @@ final case class CasperState(
       Map.empty[BlockHash, Seq[ipc.TransformEntry]]
 )
 
-class MultiParentCasperImpl[
-    F[_]: Sync: ConnectionsCell: TransportLayer: Log: Time: ErrorHandler: SafetyOracle: BlockStore: RPConfAsk: BlockDagStorage: ExecutionEngineService](
+class MultiParentCasperImpl[F[_]: Sync: ConnectionsCell: TransportLayer: Log: Time: ErrorHandler: SafetyOracle: BlockStore: RPConfAsk: BlockDagStorage: ExecutionEngineService](
     validatorId: Option[ValidatorIdentity],
     genesis: BlockMessage,
     postGenesisStateHash: StateHash,
@@ -333,7 +332,11 @@ class MultiParentCasperImpl[
       deployLookup                     = processedDeploys.zip(r).toMap
       commutingEffects                 = ExecEngineUtil.findCommutingEffects(processedDeploys)
       deploysForBlock = commutingEffects.map(eff => {
-        val deploy = deployLookup(ipc.DeployResult(ipc.DeployResult.Result.Effects(eff)))
+        val deploy = deployLookup(
+          ipc.DeployResult(
+            Some(ipc.DeployResult.Result(ipc.DeployResult.Result.Result.Effects(eff)))
+          )
+        )
         protocol.ProcessedDeploy(
           Some(deploy),
           eff.cost,
@@ -423,7 +426,7 @@ class MultiParentCasperImpl[
         Sync[F].delay(
           s.transforms
             .getOrElse(b.blockHash, Seq.empty[ipc.TransformEntry])
-      )
+        )
       processedHash <- ExecEngineUtil
                         .effectsForBlock(b, dag, f)
                         .recoverWith {
@@ -587,7 +590,7 @@ class MultiParentCasperImpl[
         s.copy(
           dependencyDag = DoublyLinkedDagOperations
             .add[BlockHash](s.dependencyDag, hash, childBlock.blockHash)
-      )
+        )
     )
 
   private def requestMissingDependency(hash: BlockHash) =
